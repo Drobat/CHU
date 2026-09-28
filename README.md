@@ -1,6 +1,6 @@
 # Exam Results Viewer
 
-[![CI](https://github.com/KristenPire/CHU/actions/workflows/ci.yml/badge.svg?branch=preprod)](https://github.com/KristenPire/CHU/actions/workflows/ci.yml)
+[![CI](https://github.com/Drobat/CHU/actions/workflows/ci.yml/badge.svg?branch=preprod)](https://github.com/Drobat/CHU/actions/workflows/ci.yml)
 
 Terminal-themed student exam results viewer built for the EPITA × Chang'an University collaboration.
 
