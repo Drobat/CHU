@@ -98,6 +98,49 @@ the front end switches to the API (BDD-31), and the JSON files leave the bundle.
 Until that second step lands, the grades remain publicly downloadable; the
 hosting move alone does not fix that.
 
+## Domain
+
+`chu-epita.com` was registered on 2026-09-28 at Cloudflare Registrar, so the
+zone is already on the DNS we deploy to and there is no nameserver move to
+schedule. It is attached to the Worker as a custom domain, and it serves
+`preprod` — the branch the CI deploys.
+
+Buying a second domain rather than pointing the existing one is what makes the
+two-step migration of the Decision above actually reversible. `chu-epita.xyz`
+keeps serving the GitHub Pages build from `master` and is not touched: as long
+as it answers, the rollback is doing nothing at all. It is redirected to
+`chu-epita.com` when the V1 is validated, and that redirect is the moment the
+migration becomes visible to students — not before.
+
+Registrar and host are the same company here, which is convenient and worth
+naming as a risk rather than discovering later: the domain, the DNS, the CDN and
+the compute all sit with one provider, so a dispute with Cloudflare is a dispute
+about everything at once. The registrar can be moved without moving the hosting,
+and that is the exit if it is ever needed.
+
+This supersedes the plan recorded in the Consequences below, which assumed the
+`.xyz` nameservers would move to Cloudflare. They do not; a second domain costs
+a few euros and buys a rollback that needs no DNS propagation.
+
+## Where the data lives
+
+The Neon project runs in **Singapore** (`ap-southeast-1`). The region was chosen
+for latency: the students are in Xi'an, and the measurements above are what the
+choice was checked against, not a prediction it was based on.
+
+That puts pseudonymised student data — a student number, a grade, a correction
+report, no name — on servers outside the European Union, processed for a French
+school. Singapore holds no EU adequacy decision, so the transfer rests on the
+standard contractual clauses in the processor's data protection agreement, and
+on the minimisation already applied upstream: no name ever enters the database,
+and the student endpoints return one student's rows.
+
+Two things follow, and neither is settled by this ADR. Neon's data protection
+agreement has to be accepted and kept with the project's records rather than
+assumed. And the retention and deletion rules (BDD-44) now have to be applied to
+a processor's servers, not only to ours — a deletion that only happens in our
+heads is not a deletion.
+
 ## Measured afterwards — 2026-09-26
 
 The decision above was taken on the strength of a Cloudflare-hosted site that had
@@ -187,8 +230,11 @@ cannot describe a spread.
   rules (BDD-44) now govern a third party's servers as well as ours.
 - Deployment stops being "push to master". It becomes a Wrangler deploy, which
   has to be wired into the CI before anyone deploys from a laptop.
-- The DNS for `chu-epita.xyz` moves from its current nameservers to Cloudflare.
-  That is the one irreversible-feeling step; it is also the last one.
+- ~~The DNS for `chu-epita.xyz` moves from its current nameservers to
+  Cloudflare.~~ Superseded by the Domain section above: a second domain,
+  `chu-epita.com`, is registered on Cloudflare instead, and `.xyz` is left
+  alone until the V1 is validated. Nothing about the existing site has to move
+  for the new one to be reachable.
 - `/api/students/:id` will expose one student's grades to anyone who knows the
   student number, which is a predictable eight-digit number. This is strictly
   better than today, where the entire dataset is one download away, and strictly

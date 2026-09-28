@@ -24,6 +24,17 @@
     "run_worker_first": ["/api/*"]
   },
 
+  // Serves preprod, the branch the CI deploys. chu-epita.xyz is untouched and
+  // keeps answering from GitHub Pages: leaving it alone is what makes the
+  // rollback free. See the Domain section of ADR-0006.
+  //
+  // custom_domain creates the DNS record and the route, so the zone has to be
+  // in this account. A deploy fails loudly if it is not, rather than publishing
+  // a Worker nobody can reach by name.
+  "routes": [
+    { "pattern": "chu-epita.com", "custom_domain": true }
+  ],
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
