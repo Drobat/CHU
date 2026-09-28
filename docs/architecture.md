@@ -30,6 +30,19 @@ branch the CI deploys. `chu-epita.xyz` still answers from GitHub Pages and is
 left untouched on purpose: it is the rollback, and it costs nothing as long as
 nobody touches `master`. It is redirected when the V1 is validated.
 
+`www.chu-epita.com` redirects to the apex with a 301, query string preserved.
+That redirect is **not in this repository**: it is a Cloudflare Redirect Rule
+named "Redirect www to apex", paired with a proxied `AAAA www 100::` record —
+the documented address for a hostname that exists only to be redirected, so
+nothing listens behind it and the request is answered at the edge.
+
+It is dashboard configuration, which is the reason it is written down here. A
+Worker-side redirect was considered and rejected: `run_worker_first` matches
+paths, never hostnames, so catching `www` in the Worker would mean running it
+on every request — every script, every stylesheet, every image — and serving
+the assets from code. That is a large change to the shape of the application in
+exchange for a redirect.
+
 Static assets are matched before the Worker runs, so they cost no invocation.
 `run_worker_first` keeps `/api/*` out of the single-page-application fallback —
 without it an API call would be answered with `index.html`.
