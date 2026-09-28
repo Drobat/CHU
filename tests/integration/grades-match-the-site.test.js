@@ -16,7 +16,7 @@ import { readFile } from "node:fs/promises";
 import { migrate } from "../../src/db/migrate.js";
 import { runImport } from "../../src/db/import.js";
 import { computeWeightedAverage } from "../../src/lib/grades.js";
-import { getStudentExams, getStudentProjects } from "../../src/data/index.js";
+import { getStudentExams, getStudentProjects } from "../helpers/site-data.js";
 import { query, resetTestDatabase } from "../helpers/test-database.js";
 
 const silent = () => {};
