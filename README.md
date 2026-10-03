@@ -135,12 +135,18 @@ DATABASE_URL="$NEON_DATABASE_URL" npm run import
 
 ```bash
 docker compose up -d db        # the Worker talks to the local database
-npm run build                  # the Worker serves ./dist
 npm run dev:api                # http://localhost:8787
 ```
 
 `dev:api` passes `DATABASE_URL` to the Hyperdrive binding as its local
 connection string, so local development never touches Neon.
+
+It also builds first, which used to be a separate step one line above this
+paragraph. `wrangler dev` serves `./dist` as it finds it and never builds it, so
+forgetting that step served a stale front end against an up-to-date Worker —
+silently, because a stale bundle looks exactly like a working one until a
+feature added since the last build is missing. There is no hot reload either
+way: restart the command to pick up a change.
 
 ### Deploying
 
