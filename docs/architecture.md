@@ -16,31 +16,18 @@ flowchart LR
 
     neon[("Neon PostgreSQL<br/>Singapore")]
 
-    subgraph gh["GitHub"]
-        pages["Pages — the old site<br/>built from master<br/>no domain of ours any more"]
-    end
-
     student -->|"chu-epita.com"| worker
     worker --> hyper --> neon
 ```
 
 `chu-epita.com` is a custom domain on the Worker and serves `preprod`, the
-branch the CI deploys.
+branch the CI deploys. It is the only address the project has.
 
-**`chu-epita.xyz` is no longer ours.** It is somebody else's site now, and it
-has nothing to do with this project. Every earlier statement that it serves the
-old grades site, or that it is the rollback to fall back on, is out of date —
-including in ADR-0002 and ADR-0006, which are left as written because an
-accepted ADR records what was decided at the time, not what is true today.
-
-That leaves no rollback. The old site built from `master` is not reachable
-through a domain of ours, so the only way back from a bad `preprod` release is
-`preprod` itself. Two things in the repository still point at the former
-domain, and neither has been changed here because changing them changes what
-gets published: `public/CNAME` still contains `chu-epita.xyz`, and
-`.github/workflows/deploy.yml` still publishes `master` to GitHub Pages on
-every push to it. A merge into `master` would therefore trigger a Pages
-deployment carrying a CNAME for a hostname the project does not control.
+There is no second site to fall back on, so the way back from a bad `preprod`
+release is `preprod` itself. ADR-0002 and ADR-0006 describe a second domain
+answering from GitHub Pages as a free rollback; that arrangement is over. They
+are left as written, because an accepted ADR records what was decided when it
+was decided.
 
 `www.chu-epita.com` redirects to the apex with a 301, query string preserved.
 That redirect is **not in this repository**: it is a Cloudflare Redirect Rule
@@ -127,12 +114,11 @@ including administrators.
   visitor, worse than a login, and acceptable only as an intermediate state.
 - **The teacher area does not exist** — no writing path, so the `grade_audit`
   trigger currently only ever records imports.
-- **The old GitHub Pages site may still be published.** It was built from
-  `master`, which bundles grades and student names, and it is no longer
-  reachable through a domain of ours — but nothing here proves it is switched
-  off, and that is a repository setting rather than a file. Whether Pages is
-  still enabled, and what it still serves, is worth checking before anything is
-  merged into `master`.
+- **GitHub Pages may still publish `master`.** `deploy.yml` still deploys on
+  every push to that branch, and the `master` build bundles grades and student
+  names. Whether Pages is enabled is a repository setting rather than a file,
+  so it is worth checking — and worth settling before anything is merged
+  there.
 
 ## Where to read further
 

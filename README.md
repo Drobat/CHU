@@ -205,19 +205,16 @@ than a login. It is an intermediate state, not a destination.
 
 | Branch | Role |
 | --- | --- |
-| `master` | The pre-V1 site, built from bundled JSON. Still published to GitHub Pages by a push to it, but `chu-epita.xyz` is no longer ours, so no domain of ours serves it. Receives one pull request from `preprod` at the end of the V1, nothing else. |
+| `master` | The pre-V1 site, built from bundled JSON, and served by no domain. A push to it still deploys to GitHub Pages. Receives one pull request from `preprod` at the end of the V1, nothing else. |
 | `preprod` | Integration branch for the V1. Every feature merges here. |
 | `feat/<slug>` | One branch per feature, created from `preprod`, short English slug. |
 
 Direct pushes to `master` and `preprod` are refused: both require a pull
 request. See `docs/adr/0002-branching-strategy.md` for why.
 
-`master` is not the rollback it used to be. `chu-epita.xyz` has left the
-project, so the site built from `master` is no longer reachable through a
-hostname of ours — while `public/CNAME` and the Pages workflow still name that
-hostname, so merging into `master` publishes to Pages under a domain the
-project does not control. Read `docs/architecture.md` before merging anything
-there.
+`master` is not a rollback: no domain serves it. A push to it still triggers a
+GitHub Pages deployment, and its build bundles grades and student names, so
+read `docs/architecture.md` before merging anything there.
 
 ### Working on a feature
 
