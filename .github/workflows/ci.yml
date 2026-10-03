@@ -2,6 +2,24 @@ name: CI
 
 on:
   pull_request:
+    # `edited` on top of the three default types (opened, synchronize,
+    # reopened), for one case: a pull request opened against the wrong base and
+    # then retargeted to preprod. The `branches` filter below is read at event
+    # time, so the opening never matched, and retargeting fires `edited` — a
+    # type that, left undeclared, left a pull request sitting on preprod with
+    # no run at all. Nothing said the gate had never closed; the absence of a
+    # red is not a green, but it reads like one.
+    #
+    # It also fires on every title and description edit, which spends a run
+    # that proves nothing. That is accepted rather than filtered: skipping the
+    # jobs on an edit that did not move the base would report them as
+    # `skipped`, and a skipped check counts as *passing* for a required check
+    # — so editing the description of a red pull request would overwrite the
+    # failures with passes and make it mergeable. Paying for a redundant run
+    # is cheaper than a gate that can be opened by renaming. The `concurrency`
+    # group below cancels the previous run on a pull request, so a burst of
+    # edits costs one run, not one each.
+    types: [opened, synchronize, reopened, edited]
     branches: [preprod]
   # Also on preprod itself: two pull requests can each be green and still
   # combine into a red preprod, and the badge needs a branch to report on.
