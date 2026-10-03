@@ -122,9 +122,12 @@ and reached through a Hyperdrive binding. See
 | `NEON_DATABASE_URL` | the production database | the commands below, explicitly |
 
 Nothing reads `NEON_DATABASE_URL` implicitly. Touching production is always a
-deliberate override on the command line:
+deliberate override on the command line — and the shell has to be given the
+variable first, because a shell does not read `.env`:
 
 ```bash
+set -a && . ./.env && set +a
+
 DATABASE_URL="$NEON_DATABASE_URL" npm run migrate
 DATABASE_URL="$NEON_DATABASE_URL" npm run import
 ```
@@ -135,18 +138,37 @@ DATABASE_URL="$NEON_DATABASE_URL" npm run import
 
 ```bash
 docker compose up -d db        # the Worker talks to the local database
-npm run build                  # the Worker serves ./dist
 npm run dev:api                # http://localhost:8787
 ```
 
 `dev:api` passes `DATABASE_URL` to the Hyperdrive binding as its local
 connection string, so local development never touches Neon.
 
+It also builds first, which used to be a separate step one line above this
+paragraph. `wrangler dev` serves `./dist` as it finds it and never builds it, so
+forgetting that step served a stale front end against an up-to-date Worker —
+silently, because a stale bundle looks exactly like a working one until a
+feature added since the last build is missing. There is no hot reload either
+way: restart the command to pick up a change.
+
 ### Deploying
 
-**A push to `preprod` deploys.** The `deploy` job of `.github/workflows/ci.yml`
-runs after `check` and `integration`, applies the migrations to Neon, then
-publishes the Worker. It needs two repository secrets:
+There are two deployments of the same code, and only one of them is automatic.
+
+| URL | Published from | Published by |
+| --- | --- | --- |
+| **`preprod.chu-epita.com`** | `preprod` | the CI, on every push |
+| `chu-epita.com` | a validated release | by hand, `npm run deploy` |
+
+**So a push to `preprod` deploys preprod**, not production: that is where a
+merged task is tried out on a real URL, with real TLS, from Xi'an. Releasing is
+a separate decision. `docs/adr/0011-preprod-environment.md` has the reasoning —
+and the limit it accepts, which is that both read the same database, so a write
+tried out on preprod writes a real grade until BDD-56 separates them.
+
+The `deploy` job of `.github/workflows/ci.yml` runs after `check` and
+`integration`, applies the migrations to Neon, then publishes the preprod
+Worker with `npm run deploy:preprod`. It needs two repository secrets:
 
 | Secret | Contents |
 | --- | --- |
@@ -187,15 +209,84 @@ Hyperdrive and never reach the Worker code or the repository.
 | `GET /api/health` | database reachability |
 | `GET /api/students/:id` | one student's courses and grades, without exam bodies |
 | `GET /api/students/:id/assessments/:assessmentId` | one assessment with its body and report |
+| `POST /api/teachers/login` | a session cookie, for a teacher number and password |
+| `POST /api/teachers/logout` | nothing, and deletes the session |
+| `GET /api/teachers/me` | the signed-in teacher, or 401 |
 
 Every read goes through the `student_grades_v` view, so an unpublished
 assessment or an archived promotion is invisible to the API by construction
 rather than by remembering to filter. Responses are `no-store`.
 
-These endpoints are **not authenticated**: anyone who knows a student number can
-read that student's grades. That is strictly better than the previous state,
+The student endpoints are **not authenticated**: anyone who knows a student
+number can read that student's grades. That is strictly better than the previous state,
 where the whole dataset shipped inside the public bundle, and strictly worse
 than a login. It is an intermediate state, not a destination.
+
+The teacher routes are the exception, and the only ones that change state. They
+require a session and a matching `Origin`; see "Teacher sign-in" below. A
+teacher number is refused by the student routes and by the import, so the two
+populations cannot be confused for one another.
+
+---
+
+## Teacher sign-in
+
+Students log in with their number alone, unchanged. **Teachers have a number
+and a password**, because the teacher area writes grades and nothing should
+write a grade anonymously. Three accounts, created by hand.
+
+A teacher number is ten digits beginning with `2042`. The entry screen reveals
+a password field once all ten digits are there, decided in the browser without
+asking the server — the server is never queried about which numbers belong to
+teachers. It waits for the whole number rather than the prefix alone, so a
+student mistyping a `2024` number is never shown a password prompt.
+
+### Creating an account
+
+```bash
+npm run create-teacher -- 2042000001            # new account
+npm run create-teacher -- 2042000001 --reset    # new password for an existing one
+```
+
+The password is generated (20 characters) and **printed once**. It is stored
+only as a hash, so nothing can print it again: hand it over, then clear it from
+your scrollback. A password is never accepted as an argument — in `argv` it
+would land in your shell history and in the process list of every other user on
+the machine.
+
+`--reset` also revokes the open sessions and clears the recorded failures. A
+reset is what you do when you fear a password leaked, so leaving a live cookie
+behind would make it decorative.
+
+There is no sign-up route and no password reset in the interface. For three
+accounts that is acceptable; it is the first thing V2 should fix.
+
+### Signing in
+
+Enter the number, then the password. **Stay signed in on this computer** is
+unchecked by default: a session lasts 12 hours, or 30 sliding days when it is
+checked. Signing out deletes the session in the database, so the cookie stops
+working rather than merely being asked not to be used.
+
+Five wrong passwords for the same number within 15 minutes block it for 15
+minutes — the right password included, or the limit would only slow an attacker
+down while leaving the account open to a lucky guess.
+
+A wrong number and a wrong password give the same answer, `Invalid ID or
+password`, in the same time. Only the rate limit says something different.
+
+### What it costs to know
+
+The session is a cookie — `HttpOnly`, `Secure`, `SameSite=Lax` — never
+`localStorage`, which a script can read. The database stores the SHA-256 of the
+token, not the token, so a dump yields nothing replayable.
+
+Passwords are hashed with PBKDF2-SHA256 at 50 000 iterations, a count chosen
+against the **10 ms of CPU** the Workers free plan allows per request and
+measured in `workerd` before anything was built.
+`docs/adr/0008-teacher-authentication.md` carries the measurements, and the
+condition attached to them: the count is enough only because passwords here are
+machine-generated. The day a teacher picks their own, it has to be revisited.
 
 ---
 

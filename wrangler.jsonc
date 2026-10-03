@@ -46,5 +46,49 @@
 
   "observability": {
     "enabled": true
+  },
+
+  // Two deployments of the same code, from two branches.
+  //
+  // The top-level configuration above is production on the apex, published by
+  // hand when a release is validated (BDD-37). This environment is the one the
+  // CI publishes on every push to `preprod`, so a merged task can be tried on
+  // a real URL before it is anything a student could reach.
+  //
+  // Bindings are not inherited by an environment — Wrangler requires each one
+  // to be declared again — so `hyperdrive` is repeated below rather than
+  // omitted. `main`, `assets` and `compatibility_date` are inherited.
+  "env": {
+    "preprod": {
+      // Wrangler would append "-preprod" to the top-level name on its own;
+      // spelling it out is what makes the Worker findable in the dashboard
+      // under the name used here.
+      "name": "chu-grades-preprod",
+
+      // custom_domain creates the DNS record as well as the route, so the
+      // subdomain does not have to be added by hand — the zone is already in
+      // this account.
+      "routes": [
+        { "pattern": "preprod.chu-epita.com", "custom_domain": true }
+      ],
+
+      // The same Hyperdrive, therefore the same database as production.
+      //
+      // That is the status quo rather than a new risk: the apex has been
+      // serving this branch and this data since September, so nothing is
+      // being joined that was separate. It does mean a write tried out on
+      // preprod writes real grades, which matters now that the teacher area
+      // is arriving — see BDD-56 for splitting them.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "10637075ba3a400180caa7268505a23b"
+        }
+      ],
+
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }

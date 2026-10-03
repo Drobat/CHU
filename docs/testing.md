@@ -13,8 +13,8 @@ than as an intention.
 | `npm run lint` | ESLint alone. | Called by `check`; run directly when you only want the linter. | Through `check`. |
 | `npm run build` | The production Vite build. | Called by `npm run deploy`, which the CI runs on a push to `preprod`. | **Yes** — a build failure stops the deploy, so nothing is published. |
 | `npm run typecheck` | Not available yet. TypeScript type checking, added to `check` when the code is migrated to TypeScript. | — | — |
-| `npm run test:unit` | Unit tests of the pure business logic of `src/lib/`, starting with the final grade formula. No database, no browser. | Called by `check`; run directly while working on the logic. | Through `check`. |
-| `npm run test:integration` | The migrations, the import script, and the rules the database itself enforces: the audit trigger, the visibility view, the absence of any name column. Runs against a real PostgreSQL. | Locally after `docker compose up -d db`; on every pull request targeting `preprod`, against a `postgres:18-alpine` service container. | **Yes** — a red `integration` job blocks the merge. |
+| `npm run test:unit` | Unit tests of the pure business logic of `src/lib/`: the final grade formula, and the authentication primitives — hashing, session tokens, teacher-number validation. No database, no browser. | Called by `check`; run directly while working on the logic. | Through `check`. |
+| `npm run test:integration` | The migrations, the import script, and the rules the database itself enforces: the audit trigger, the visibility view, the absence of any name column, that `metabase_reader` is refused every write, and teacher authentication end to end — login, the rate limit, the cookie, logout. Runs against a real PostgreSQL. | Locally after `docker compose up -d db`; on every pull request targeting `preprod`, against a `postgres:18-alpine` service container. | **Yes** — a red `integration` job blocks the merge. |
 | `npm run test:e2e` | Not available yet. Browser scenarios: a student reads their grades, a teacher edits one. | — | — |
 
 The integration tests are deliberately **not** part of `check`: they need a

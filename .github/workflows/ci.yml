@@ -95,10 +95,15 @@ jobs:
           # the lock, the migration and the unlock on three different backends.
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
 
+      # Publishes to preprod.chu-epita.com, not to the apex. The apex is
+      # production and is published deliberately, by hand, when a release is
+      # validated — see docs/adr/0011-preprod-environment.md. A merge is
+      # therefore testable on a real URL without being something a student
+      # could reach.
+      #
       # The same script a contributor runs by hand, so the two paths cannot
-      # drift: build, drop the files GitHub Pages needs and Cloudflare does not,
-      # then publish.
-      - name: Build and publish the Worker
-        run: npm run deploy
+      # drift.
+      - name: Build and publish the Worker to preprod
+        run: npm run deploy:preprod
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
