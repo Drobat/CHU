@@ -9,14 +9,28 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { scaleIn, shake, delayedFade, delayedScale } from "../theme";
 import { BlinkingCursor } from "../components";
-import { fetchStudent } from "../api/client";
+import { fetchStudent, loginTeacher } from "../api/client";
+import { isTeacherId } from "../lib/teacher-auth";
 
-export function LoginScreen({ onLogin }) {
+/**
+ * The prefix alone, not the whole pattern: the password field has to appear
+ * while the number is still being typed, not once the tenth digit lands.
+ */
+const TEACHER_PREFIX = /^2042/;
+
+export function LoginScreen({ onLogin, onTeacherLogin }) {
   const [studentId, setStudentId] = useState("");
+  const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
   const inputRef = { current: null };
+  const passwordRef = { current: null };
+
+  // Decided here, from the digits, with no request. Asking the server which
+  // numbers are teachers' would be a way to enumerate them.
+  const looksLikeTeacher = TEACHER_PREFIX.test(studentId);
 
   // Checking a number used to be a lookup in a table the browser already had.
   // It is now a request, so it can be slow and it can fail — and an unknown
@@ -26,24 +40,36 @@ export function LoginScreen({ onLogin }) {
     setError(null);
     if (!id || busy) return;
 
+    // A teacher number has a fixed shape, so an incomplete one is caught here
+    // rather than spent as one of the five attempts the server allows.
+    if (looksLikeTeacher && !isTeacherId(id)) {
+      setError({ kind: "teacherIdShape" });
+      setShakeKey((k) => k + 1);
+      return;
+    }
+
     setBusy(true);
     try {
+      if (isTeacherId(id)) {
+        const session = await loginTeacher({ id, password, remember });
+        onTeacherLogin(session);
+        return;
+      }
       const student = await fetchStudent(id);
       onLogin(student);
     } catch (failure) {
-      setError(
-        failure?.kind === "notFound"
-          ? { kind: "notFound", id }
-          : { kind: "unreachable" },
-      );
-      if (failure?.kind === "notFound") setStudentId("");
+      setError(teacherAwareError(failure, id));
+      // Clearing the password and keeping the number is what a retry needs:
+      // the number is almost always right and the password almost never is.
+      if (looksLikeTeacher) setPassword("");
+      else if (failure?.kind === "notFound") setStudentId("");
       setShakeKey((k) => k + 1);
     } finally {
       setBusy(false);
     }
   };
 
-  const focus = () => inputRef.current?.focus();
+  const focus = () => (looksLikeTeacher ? passwordRef : inputRef).current?.focus();
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" onClick={focus}>
@@ -55,19 +81,43 @@ export function LoginScreen({ onLogin }) {
           <SchoolHeader />
           <IdPrompt
             studentId={studentId}
+            password={password}
+            remember={remember}
+            looksLikeTeacher={looksLikeTeacher}
             error={error}
             busy={busy}
             shakeKey={shakeKey}
             inputRef={inputRef}
+            passwordRef={passwordRef}
             onSubmit={submit}
             onFocus={focus}
-            onChange={(val) => { setStudentId(val); setError(null); }}
+            onChange={(val) => {
+              setStudentId(val);
+              setError(null);
+              // Leaving the teacher range clears what was typed into a field
+              // that is about to disappear.
+              if (!TEACHER_PREFIX.test(val)) { setPassword(""); setRemember(false); }
+            }}
+            onPasswordChange={(val) => { setPassword(val); setError(null); }}
+            onRememberChange={setRemember}
           />
         </div>
 
       </motion.div>
     </div>
   );
+}
+
+/**
+ * The server answers one thing for a wrong number and a wrong password alike,
+ * and this function does not try to be cleverer than that. Only the rate limit
+ * is told apart, because "wait" and "try again" ask for different behaviour.
+ */
+function teacherAwareError(failure, id) {
+  if (failure?.kind === "rateLimited") return { kind: "rateLimited" };
+  if (failure?.kind === "refused") return { kind: "refused" };
+  if (failure?.kind === "notFound") return { kind: "notFound", id };
+  return { kind: "unreachable" };
 }
 
 // ── Sub-components ───────────────────────────────
@@ -112,7 +162,10 @@ function SchoolHeader() {
   );
 }
 
-function IdPrompt({ studentId, error, busy, shakeKey, inputRef, onSubmit, onFocus, onChange }) {
+function IdPrompt({
+  studentId, password, remember, looksLikeTeacher, error, busy, shakeKey,
+  inputRef, passwordRef, onSubmit, onFocus, onChange, onPasswordChange, onRememberChange,
+}) {
   return (
     <motion.div {...delayedFade(0.7)}>
       <div className="text-tm-text mb-3 text-[13px]">Enter your student ID:</div>
@@ -127,11 +180,73 @@ function IdPrompt({ studentId, error, busy, shakeKey, inputRef, onSubmit, onFocu
         onChange={onChange}
       />
 
+      <AnimatePresence>
+        {looksLikeTeacher && (
+          <PasswordPrompt
+            password={password}
+            remember={remember}
+            passwordRef={passwordRef}
+            onSubmit={onSubmit}
+            onChange={onPasswordChange}
+            onRememberChange={onRememberChange}
+          />
+        )}
+      </AnimatePresence>
+
       <StatusLine error={error} busy={busy} />
 
       <div className="flex justify-end">
         <SubmitButton onSubmit={onSubmit} busy={busy} />
       </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Appears as soon as the number starts with the teacher prefix, without a
+ * request: the server is never asked whether a number belongs to a teacher.
+ *
+ * The characters are rendered as dots rather than echoed, and the real input is
+ * a type="password" off-screen so that a password manager still recognises it
+ * and the browser never shows the value.
+ */
+function PasswordPrompt({ password, remember, passwordRef, onSubmit, onChange, onRememberChange }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.2 }}
+      className="overflow-hidden"
+    >
+      <div className="flex items-center cursor-text mt-3" onClick={() => passwordRef.current?.focus()}>
+        <span className="text-tm-yellow whitespace-nowrap text-[12px] sm:text-[14px]">teacher@exam</span>
+        <span className="text-tm-dim text-[12px] sm:text-[14px]">:~$ </span>
+        <span className="text-tm-white tracking-[2px]">{"•".repeat(password.length)}</span>
+        <BlinkingCursor />
+        <input
+          ref={(el) => { passwordRef.current = el; }}
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+          className="fixed top-0 left-0 opacity-0 w-px h-px pointer-events-none"
+        />
+      </div>
+
+      {/* Unchecked by default, and labelled "this computer" rather than
+          "remember me": the choice is about the machine, not the person. */}
+      <label className="flex items-center gap-2 mt-3 text-[11px] text-tm-dim cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e) => onRememberChange(e.target.checked)}
+          className="accent-tm-cyan cursor-pointer"
+        />
+        Stay signed in on this computer
+      </label>
     </motion.div>
   );
 }
@@ -179,6 +294,24 @@ function StatusLine({ error, busy }) {
           <motion.span key="notFound" className="text-tm-red"
             initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
             -bash: student '{error.id}': not found
+          </motion.span>
+        )}
+        {!busy && error?.kind === "refused" && (
+          <motion.span key="refused" className="text-tm-red"
+            initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+            -bash: Invalid ID or password
+          </motion.span>
+        )}
+        {!busy && error?.kind === "rateLimited" && (
+          <motion.span key="rateLimited" className="text-tm-yellow"
+            initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+            -bash: too many attempts — wait 15 minutes
+          </motion.span>
+        )}
+        {!busy && error?.kind === "teacherIdShape" && (
+          <motion.span key="teacherIdShape" className="text-tm-dim"
+            initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+            -bash: a teacher ID is 10 digits
           </motion.span>
         )}
         {!busy && error?.kind === "unreachable" && (
