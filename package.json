@@ -18,7 +18,7 @@
     "test:integration": "vitest run --config vitest.integration.config.js",
     "test:unit": "vitest run tests/unit",
     "dev:api": "sh -c 'set -a && . ./.env && CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$DATABASE_URL\" wrangler dev'",
-    "prepublish:worker": "rm -f dist/.DS_Store dist/CNAME",
+    "prepublish:worker": "rm -f dist/.DS_Store",
     "deploy": "npm run build && npm run prepublish:worker && wrangler deploy"
   },
   "dependencies": {
