@@ -227,3 +227,33 @@ describe("rate-limit policy", () => {
     expect(ATTEMPT_WINDOW_MINUTES).toBe(15);
   });
 });
+
+describe("the import refuses teacher numbers", () => {
+  it("stops on one, naming it", async () => {
+    const { assertNoTeacherNumbers } = await import("../../src/db/import.js");
+
+    expect(() => assertNoTeacherNumbers(["2024904082", "2042000001", "1234"])).toThrow(
+      /2042000001/,
+    );
+    // The message has to be actionable: the person reading it is looking at a
+    // JSON file, so it says which number and what to do.
+    expect(() => assertNoTeacherNumbers(["2042000001"])).toThrow(/reserved for teachers/);
+    expect(() => assertNoTeacherNumbers(["2042000001"])).toThrow(/Correct the data/);
+  });
+
+  it("names every offending number, not just the first", async () => {
+    const { assertNoTeacherNumbers } = await import("../../src/db/import.js");
+    expect(() => assertNoTeacherNumbers(["2042000001", "2042000002"])).toThrow(/2042000002/);
+    expect(() => assertNoTeacherNumbers(["2042000001", "2042000002"])).toThrow(/2 identifier/);
+  });
+
+  it("lets a file of real student numbers through", async () => {
+    const { assertNoTeacherNumbers } = await import("../../src/db/import.js");
+    // Including 2024, the transposition of the teacher prefix, which is a real
+    // cohort and must not be caught by this guard.
+    expect(() =>
+      assertNoTeacherNumbers(["2024904082", "2023905492", "2025000001", "1234", "5678"]),
+    ).not.toThrow();
+    expect(() => assertNoTeacherNumbers([])).not.toThrow();
+  });
+});
