@@ -16,19 +16,18 @@ flowchart LR
 
     neon[("Neon PostgreSQL<br/>Singapore")]
 
-    subgraph gh["GitHub"]
-        pages["Pages — the old site<br/>built from master"]
-    end
-
     student -->|"chu-epita.com"| worker
-    student -.->|"chu-epita.xyz — until the V1 switch"| pages
     worker --> hyper --> neon
 ```
 
 `chu-epita.com` is a custom domain on the Worker and serves `preprod`, the
-branch the CI deploys. `chu-epita.xyz` still answers from GitHub Pages and is
-left untouched on purpose: it is the rollback, and it costs nothing as long as
-nobody touches `master`. It is redirected when the V1 is validated.
+branch the CI deploys. It is the only address the project has.
+
+There is no second site to fall back on, so the way back from a bad `preprod`
+release is `preprod` itself. ADR-0002 and ADR-0006 describe a second domain
+answering from GitHub Pages as a free rollback; that arrangement is over. They
+are left as written, because an accepted ADR records what was decided when it
+was decided.
 
 `www.chu-epita.com` redirects to the apex with a 301, query string preserved.
 That redirect is **not in this repository**: it is a Cloudflare Redirect Rule
@@ -115,8 +114,11 @@ including administrators.
   visitor, worse than a login, and acceptable only as an intermediate state.
 - **The teacher area does not exist** — no writing path, so the `grade_audit`
   trigger currently only ever records imports.
-- **`chu-epita.xyz` still serves the old site**, grades included, until the
-  redirect lands.
+- **GitHub Pages may still publish `master`.** `deploy.yml` still deploys on
+  every push to that branch, and the `master` build bundles grades and student
+  names. Whether Pages is enabled is a repository setting rather than a file,
+  so it is worth checking — and worth settling before anything is merged
+  there.
 
 ## Where to read further
 
