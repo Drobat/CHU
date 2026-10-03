@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { isTeacherId } from "../lib/teacher-auth.js";
+import { requireDatabaseUrl } from "./connection-url.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(HERE, "..", "data");
@@ -367,10 +368,7 @@ async function importGroups(client, dir, assessmentId, cohortId, counters, log) 
 }
 
 export async function runImport({ connectionString, log = console.log, importMap } = {}) {
-  const url = connectionString ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL is not set. Copy .env.example to .env, then run docker compose up -d db.");
-  }
+  const url = requireDatabaseUrl(connectionString);
 
   // Tests pass their own map so that proving the importer works on a project
   // does not require committing a decision about which promotion sat a course.

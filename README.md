@@ -122,9 +122,12 @@ and reached through a Hyperdrive binding. See
 | `NEON_DATABASE_URL` | the production database | the commands below, explicitly |
 
 Nothing reads `NEON_DATABASE_URL` implicitly. Touching production is always a
-deliberate override on the command line:
+deliberate override on the command line — and the shell has to be given the
+variable first, because a shell does not read `.env`:
 
 ```bash
+set -a && . ./.env && set +a
+
 DATABASE_URL="$NEON_DATABASE_URL" npm run migrate
 DATABASE_URL="$NEON_DATABASE_URL" npm run import
 ```

@@ -10,6 +10,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { requireDatabaseUrl } from "./connection-url.js";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
 
@@ -31,10 +32,7 @@ async function applyMigration(client, file) {
 }
 
 export async function migrate({ connectionString, log = console.log } = {}) {
-  const url = connectionString ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL is not set. Copy .env.example to .env, then run docker compose up -d db.");
-  }
+  const url = requireDatabaseUrl(connectionString);
 
   const client = new pg.Client({ connectionString: url });
   await client.connect();
