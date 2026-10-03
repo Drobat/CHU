@@ -1,4 +1,6 @@
 # Local and CI environments — see docs/adr/0004-docker-compose-environments.md
+# `docker compose up` starts the database; the optional `metabase` profile
+# adds local analytics (BDD-53).
 # The `web` service is added once the Next.js migration (BDD-27) is merged.
 
 services:
@@ -26,6 +28,60 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # Local analytics, off by default: it only starts under its profile, so
+  # `docker compose up` stays the database alone and nobody pays for a tool
+  # they are not using. See the README, "Local analytics with Metabase".
+  #
+  # This is a workstation tool. It is not exposed to teachers and it is not
+  # hosted anywhere — opening it to them is a separate decision, with its own
+  # ADR, and needs an authentication story this project does not have yet.
+  metabase:
+    image: metabase/metabase:v0.63.19.1
+    container_name: chu_metabase
+    profiles: ["metabase"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Metabase exits rather than retries when its application database
+        # refuses the first connection, so waiting for pg_isready is what makes
+        # `up` reliable instead of a race it usually wins.
+        condition: service_healthy
+    ports:
+      # Loopback only, like the database. 3000 inside the container is
+      # Metabase's own default and is not configurable; 3001 outside keeps the
+      # port free for an application dev server on 3000.
+      - "127.0.0.1:${METABASE_PORT:-3001}:3000"
+    environment:
+      # Metabase's own state — dashboards, questions, accounts — goes to
+      # PostgreSQL rather than the H2 file inside the container, which is
+      # deleted with the container and would take every dashboard with it.
+      # The database lives in the `pgdata` volume, so `down` then `up` finds
+      # the questions where they were left.
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: db
+      # The port inside the compose network, not DB_PORT: that one is the
+      # host's, and is irrelevant between two containers on the same network.
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: metabase_app
+      # The role is read-only on the grades and owns metabase_app, so the same
+      # credential writes its own state and cannot touch a grade.
+      # Created by `npm run metabase:setup`, which must run first.
+      MB_DB_USER: metabase_reader
+      # Interpolated from .env, which Compose reads on its own. Deliberately
+      # not `env_file: .env` like the db service: that would hand the whole
+      # file to Metabase, POSTGRES_PASSWORD included, and a container holding
+      # the administrator credential is not read-only in any useful sense.
+      # Left unset, Compose warns and names the variable, and Metabase then
+      # fails to start.
+      MB_DB_PASS: ${METABASE_READER_PASSWORD}
+      # No usage statistics leave this machine. The data being explored is real
+      # student grades.
+      MB_ANON_TRACKING_ENABLED: "false"
+    # No volume on purpose: everything worth keeping is in `pgdata`, through
+    # the database above. No healthcheck either — nothing waits on this service,
+    # and the image carries no documented in-container probe, so an unverified
+    # one would only report "unhealthy" on a working container.
 
 volumes:
   pgdata:

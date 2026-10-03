@@ -15,6 +15,7 @@
     "prepare": "simple-git-hooks",
     "migrate": "node --env-file-if-exists=.env src/db/migrate.js",
     "import": "node --env-file-if-exists=.env src/db/import.js",
+    "metabase:setup": "node --env-file-if-exists=.env src/db/metabase-role.js",
     "test:integration": "vitest run --config vitest.integration.config.js",
     "test:unit": "vitest run tests/unit",
     "create-teacher": "node --env-file-if-exists=.env src/db/create-teacher.js",
