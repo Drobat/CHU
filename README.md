@@ -1,5 +1,7 @@
 # Exam Results Viewer
 
+[![CI](https://github.com/Drobat/CHU/actions/workflows/ci.yml/badge.svg?branch=preprod)](https://github.com/Drobat/CHU/actions/workflows/ci.yml)
+
 Terminal-themed student exam results viewer built for the EPITA × Chang'an University collaboration.
 
 Three teachers share this site — each manages their own class (`net`, `os`, `fp`). Students log in with their ID, pick a class tab, and review their graded MCQs question by question.
@@ -31,6 +33,336 @@ Then replace `src/` with this folder and run:
 ```bash
 npm run dev
 ```
+
+---
+
+## Local database
+
+The V1 stores grades in PostgreSQL instead of the JSON files of `src/data/`. The
+database runs in Docker so that every contributor — and the CI — uses the exact
+same version. Requires Docker (or Docker Desktop) running.
+
+```bash
+cp .env.example .env          # then edit the password if you want
+docker compose up -d db       # starts postgres:18-alpine
+docker compose ps             # wait for STATUS = healthy (a few seconds)
+```
+
+Connect with `psql` inside the container:
+
+```bash
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```
+
+Stop it, keeping the data (named volume `pgdata`):
+
+```bash
+docker compose down
+```
+
+Reset it — **deletes every row**, useful to replay the migrations from an empty
+database:
+
+```bash
+docker compose down -v
+```
+
+`.env` holds the credentials and is gitignored; `.env.example` is the committed
+reference. `DATABASE_URL` is the only variable the application code reads. The
+port is published on `127.0.0.1` only, so the database is never reachable from
+the local network.
+
+If `docker compose up` fails with `address already in use`, another PostgreSQL
+already holds the port. Set `DB_PORT` to a free one in `.env` and update the
+port inside `DATABASE_URL` to match:
+
+```bash
+DB_PORT=5433
+DATABASE_URL=postgres://chu:local-dev-password@127.0.0.1:5433/chu_grades
+```
+
+See `docs/adr/0004-docker-compose-environments.md` for why the database runs in
+Docker rather than being installed on each machine.
+
+Once the container is healthy, build the schema and load the data:
+
+```bash
+npm run migrate                # applies src/db/migrations/*.sql in order
+npm run import                 # loads the courses listed in src/db/import-map.json
+npm run test:integration       # runs against a separate <database>_test
+```
+
+`migrate` and `import` are separate on purpose: the schema is versioned and
+applied once, the grades are data that get corrected and reloaded. Both are
+safe to run again — `migrate` skips what it already applied, `import` upserts
+and leaves the audit journal alone when nothing changed.
+
+`import-map.json` decides which course folders of `src/data/` are imported. It
+holds one entry today: the chain is validated on Python OOP for the 2025
+promotion before the rest of the catalogue is opened. Folders absent from it
+are reported and skipped.
+
+See `docs/database.md` for the schema and the rules the database enforces, and
+`docs/adr/0003-postgresql-access-and-migrations.md` for why there is no ORM.
+
+---
+
+## Production
+
+Production runs on Cloudflare Workers: one Worker serves the Vite build as
+static assets and answers `/api/*`. The database is hosted by Neon in Singapore
+and reached through a Hyperdrive binding. See
+`docs/adr/0006-cloudflare-workers-hosting.md` for why.
+
+`.env` holds two connection strings and they are not interchangeable:
+
+| Variable | Points at | Used by |
+| --- | --- | --- |
+| `DATABASE_URL` | the local Docker database | `dev:api`, `migrate`, `import`, integration tests |
+| `NEON_DATABASE_URL` | the production database | the commands below, explicitly |
+
+Nothing reads `NEON_DATABASE_URL` implicitly. Touching production is always a
+deliberate override on the command line — and the shell has to be given the
+variable first, because a shell does not read `.env`:
+
+```bash
+set -a && . ./.env && set +a
+
+DATABASE_URL="$NEON_DATABASE_URL" npm run migrate
+DATABASE_URL="$NEON_DATABASE_URL" npm run import
+```
+
+(A variable set in the shell wins over `.env`, so the override is enough.)
+
+### Running the API locally
+
+```bash
+docker compose up -d db        # the Worker talks to the local database
+npm run dev:api                # http://localhost:8787
+```
+
+`dev:api` passes `DATABASE_URL` to the Hyperdrive binding as its local
+connection string, so local development never touches Neon.
+
+It also builds first, which used to be a separate step one line above this
+paragraph. `wrangler dev` serves `./dist` as it finds it and never builds it, so
+forgetting that step served a stale front end against an up-to-date Worker —
+silently, because a stale bundle looks exactly like a working one until a
+feature added since the last build is missing. There is no hot reload either
+way: restart the command to pick up a change.
+
+### Deploying
+
+There are two deployments of the same code, and only one of them is automatic.
+
+| URL | Published from | Published by |
+| --- | --- | --- |
+| **`preprod.chu-epita.com`** | `preprod` | the CI, on every push |
+| `chu-epita.com` | a validated release | by hand, `npm run deploy` |
+
+**So a push to `preprod` deploys preprod**, not production: that is where a
+merged task is tried out on a real URL, with real TLS, from Xi'an. Releasing is
+a separate decision. `docs/adr/0011-preprod-environment.md` has the reasoning —
+and the limit it accepts, which is that both read the same database, so a write
+tried out on preprod writes a real grade until BDD-56 separates them.
+
+The `deploy` job of `.github/workflows/ci.yml` runs after `check` and
+`integration`, applies the migrations to Neon, then publishes the preprod
+Worker with `npm run deploy:preprod`. It needs two repository secrets:
+
+| Secret | Contents |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | API token, `Workers Scripts: Edit`, restricted to the account named in `wrangler.jsonc` |
+| `NEON_DATABASE_URL` | the **direct** connection string, not the pooled one — `migrate.js` takes a session-level advisory lock |
+
+The schema is applied before the Worker is published, and a migration that fails
+publishes nothing. That protects against code newer than the schema, which is a
+failure we have already had. It does not protect against the opposite: a
+migration that removes what the live Worker still reads breaks production for the
+seconds between the two steps. **A destructive change takes two releases** — add
+the new shape, publish the code that stopped using the old one, drop it later.
+
+Deploying by hand still works and is the fallback when the CI is unavailable:
+
+```bash
+npx wrangler login             # once per machine
+npm run deploy                 # builds, then wrangler deploy
+```
+
+It runs the same script the CI runs, but it skips the migrations and the tests,
+and it publishes whatever is in the working tree. It is not the normal path.
+
+The Hyperdrive configuration is created once per account and its id goes into
+`wrangler.jsonc`:
+
+```bash
+npx wrangler hyperdrive create chu-grades-db --connection-string="$NEON_DATABASE_URL"
+```
+
+The id is a public identifier, not a secret: the credentials stay inside
+Hyperdrive and never reach the Worker code or the repository.
+
+### What the API exposes
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/health` | database reachability |
+| `GET /api/students/:id` | one student's courses and grades, without exam bodies |
+| `GET /api/students/:id/assessments/:assessmentId` | one assessment with its body and report |
+| `POST /api/teachers/login` | a session cookie, for a teacher number and password |
+| `POST /api/teachers/logout` | nothing, and deletes the session |
+| `GET /api/teachers/me` | the signed-in teacher, or 401 |
+
+Every read goes through the `student_grades_v` view, so an unpublished
+assessment or an archived promotion is invisible to the API by construction
+rather than by remembering to filter. Responses are `no-store`.
+
+The student endpoints are **not authenticated**: anyone who knows a student
+number can read that student's grades. That is strictly better than the previous state,
+where the whole dataset shipped inside the public bundle, and strictly worse
+than a login. It is an intermediate state, not a destination.
+
+The teacher routes are the exception, and the only ones that change state. They
+require a session and a matching `Origin`; see "Teacher sign-in" below. A
+teacher number is refused by the student routes and by the import, so the two
+populations cannot be confused for one another.
+
+---
+
+## Teacher sign-in
+
+Students log in with their number alone, unchanged. **Teachers have a number
+and a password**, because the teacher area writes grades and nothing should
+write a grade anonymously. Three accounts, created by hand.
+
+A teacher number is ten digits beginning with `2042`. The entry screen reveals
+a password field once all ten digits are there, decided in the browser without
+asking the server — the server is never queried about which numbers belong to
+teachers. It waits for the whole number rather than the prefix alone, so a
+student mistyping a `2024` number is never shown a password prompt.
+
+### Creating an account
+
+```bash
+npm run create-teacher -- 2042000001            # new account
+npm run create-teacher -- 2042000001 --reset    # new password for an existing one
+```
+
+The password is generated (20 characters) and **printed once**. It is stored
+only as a hash, so nothing can print it again: hand it over, then clear it from
+your scrollback. A password is never accepted as an argument — in `argv` it
+would land in your shell history and in the process list of every other user on
+the machine.
+
+`--reset` also revokes the open sessions and clears the recorded failures. A
+reset is what you do when you fear a password leaked, so leaving a live cookie
+behind would make it decorative.
+
+There is no sign-up route and no password reset in the interface. For three
+accounts that is acceptable; it is the first thing V2 should fix.
+
+### Signing in
+
+Enter the number, then the password. **Stay signed in on this computer** is
+unchecked by default: a session lasts 12 hours, or 30 sliding days when it is
+checked. Signing out deletes the session in the database, so the cookie stops
+working rather than merely being asked not to be used.
+
+Five wrong passwords for the same number within 15 minutes block it for 15
+minutes — the right password included, or the limit would only slow an attacker
+down while leaving the account open to a lucky guess.
+
+A wrong number and a wrong password give the same answer, `Invalid ID or
+password`, in the same time. Only the rate limit says something different.
+
+### What it costs to know
+
+The session is a cookie — `HttpOnly`, `Secure`, `SameSite=Lax` — never
+`localStorage`, which a script can read. The database stores the SHA-256 of the
+token, not the token, so a dump yields nothing replayable.
+
+Passwords are hashed with PBKDF2-SHA256 at 50 000 iterations, a count chosen
+against the **10 ms of CPU** the Workers free plan allows per request and
+measured in `workerd` before anything was built.
+`docs/adr/0008-teacher-authentication.md` carries the measurements, and the
+condition attached to them: the count is enough only because passwords here are
+machine-generated. The day a teacher picks their own, it has to be revisited.
+
+---
+
+## Contributing
+
+### Branches
+
+| Branch | Role |
+| --- | --- |
+| `master` | Production. Built and published to GitHub Pages on `chu-epita.xyz`, read by students. Receives one pull request from `preprod` at the end of the V1, nothing else. |
+| `preprod` | Integration branch for the V1. Every feature merges here. |
+| `feat/<slug>` | One branch per feature, created from `preprod`, short English slug. |
+
+Direct pushes to `master` and `preprod` are refused: both require a pull
+request. See `docs/adr/0002-branching-strategy.md` for why.
+
+### Working on a feature
+
+```bash
+git checkout preprod && git pull
+git checkout -b feat/<slug>
+# … work, in small commits …
+npm run check          # same command the CI runs
+git push -u origin feat/<slug>
+```
+
+The push triggers a pre-push hook that runs `npm run check` and refuses the push
+if it fails. The hook is installed by `npm install` (`prepare` script); it is a
+convenience and can be bypassed with `--no-verify`, but the same check is
+required on the pull request, so bypassing it only defers the failure.
+
+Then open a pull request against `preprod`. It cannot be merged until the `check`
+job is green. `docs/testing.md` lists what is checked and what blocks a merge.
+
+### Checks
+
+```bash
+npm run check     # the single entry point — lint today, more later
+npm run lint      # ESLint alone
+npm run build     # production build, as the Pages deployment runs it
+```
+
+`check` is what the hook and the CI call, verbatim. New checks are added to that
+one script, so a contributor never has to read the workflow to know what will
+run.
+
+### Commits
+
+Conventional Commits, in English, one commit per logical step — a migration, a
+script, a test, a route, a screen — in the order the work is built. No squash,
+no interactive rebase, no amend on something already pushed.
+
+Each message has a body that says *why*: the context, and the alternative that
+was rejected when it is relevant. The footer links the commit to its task.
+
+```
+feat(db): add grades table with audit trigger
+
+Every grade change must be traceable (who/what/when) before opening the
+teacher area. A trigger on UPDATE copies the previous row into
+grade_audit; done in SQL rather than app code so imports are covered too.
+
+Refs: BDD-29
+```
+
+### Architecture decisions
+
+Any structural choice — framework, database, driver, hosting, authentication,
+test strategy — gets a file in `docs/adr/` following `docs/adr/TEMPLATE.md`, and
+that file is committed **before** the code it justifies.
+
+### What never enters the repository
+
+Student names, credentials, `.env`, and the teacher working folders
+(`document/`, `C++GroupGrading/`). The JSON files in `src/data/` are the import
+format of reference: write code that reads them, do not reshape them.
 
 ---
 

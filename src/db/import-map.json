@@ -1,0 +1,11 @@
+{
+  "python_oop": 2025,
+  "asm": 2024,
+  "cpp": 2024,
+  "shell": 2024,
+  "web": 2025,
+  "algo": { "course": "algo2", "cohort": 2025 },
+  "fp": 2023,
+  "net": 2023,
+  "os": 2023
+}

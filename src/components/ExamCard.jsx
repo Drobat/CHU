@@ -4,16 +4,17 @@ import { C, gradeColor, staggerItem } from "../theme";
 import { AsciiBox } from "./AsciiBox";
 import { ProgressBar } from "./ProgressBar";
 
-export function ExamCard({ exam, student, onClick, isLatest }) {
+export function ExamCard({ assessment, onClick, isLatest }) {
   const [hovered, setHovered] = useState(false);
-  const pct = (student.grade / exam.totalPoints) * 100;
-  const hasAnswers = student.wrong !== undefined;
-  const hasBody = exam.questions?.length > 0;
+  const pct = (assessment.grade / assessment.totalPoints) * 100;
+  // null means the teacher recorded no answers for this exam; 0 means they did
+  // and none was wrong. The card says something different for each.
+  const hasAnswers = assessment.wrongCount != null;
+  const hasBody = (assessment.questionCount ?? 0) > 0;
   const hasDetail = hasAnswers || hasBody;
 
-  const wrongCount = hasAnswers ? Object.keys(student.wrong).length : null;
-  const totalQ = exam.questions?.length || 0;
-  const correctCount = hasAnswers ? totalQ - wrongCount : null;
+  const wrongCount = assessment.wrongCount;
+  const correctCount = hasAnswers ? (assessment.questionCount ?? 0) - wrongCount : null;
 
   const nudge = isLatest && hasDetail;
 
@@ -50,8 +51,7 @@ export function ExamCard({ exam, student, onClick, isLatest }) {
           <div onClick={hasDetail ? onClick : undefined}>
 
             <ExamCardBody
-              exam={exam}
-              student={student}
+              assessment={assessment}
               pct={pct}
               hasDetail={hasDetail}
               hasAnswers={hasAnswers}
@@ -73,21 +73,21 @@ export function ExamCard({ exam, student, onClick, isLatest }) {
   );
 }
 
-function ExamCardBody({ exam, student, pct, hasDetail, hasAnswers, correctCount }) {
+function ExamCardBody({ assessment, pct, hasDetail, hasAnswers, correctCount }) {
   return (
     <div className="p-3 sm:p-5 pb-0">
 
       <div className="flex justify-between items-baseline mb-1 flex-wrap gap-2">
-        <span className="text-tm-white text-[15px] font-bold">{exam.title}</span>
-        <span className="text-tm-dim text-[11px]">{exam.coeff}%</span>
+        <span className="text-tm-white text-[15px] font-bold">{assessment.title}</span>
+        <span className="text-tm-dim text-[11px]">{assessment.coeff}%</span>
       </div>
 
       <div className="text-tm-dim text-[12px] mb-3">
-        {exam.date} │ published {exam.publishedDate}
+        {assessment.heldOn} │ published {assessment.publishedOn}
       </div>
 
       <div className="flex justify-between items-center flex-wrap gap-2 mb-2">
-        <GradeDisplay student={student} pct={pct} exam={exam} />
+        <GradeDisplay assessment={assessment} pct={pct} />
         <span className="overflow-hidden">
           <ProgressBar percent={pct} width={15} />
         </span>
@@ -107,16 +107,16 @@ function ExamCardBody({ exam, student, pct, hasDetail, hasAnswers, correctCount 
   );
 }
 
-function GradeDisplay({ student, pct, exam }) {
+function GradeDisplay({ assessment, pct }) {
   return (
     <div>
       <span
         className="text-[22px] font-bold"
         style={{ color: gradeColor(pct) }}
       >
-        {student.grade}
+        {assessment.grade}
       </span>
-      <span className="text-tm-dim text-[14px]"> / {exam.totalPoints}</span>
+      <span className="text-tm-dim text-[14px]"> / {assessment.totalPoints}</span>
     </div>
   );
 }

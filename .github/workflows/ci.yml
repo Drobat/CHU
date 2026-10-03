@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [preprod]
+  # Also on preprod itself: two pull requests can each be green and still
+  # combine into a red preprod, and the badge needs a branch to report on.
+  push:
+    branches: [preprod]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancelling the previous run is right for a pull request, where only the
+  # latest push matters. It is wrong on preprod, because that run publishes to
+  # production: it could be killed between the migration and the publish, which
+  # is the one moment where the schema and the running Worker disagree.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        # Same major version as docker-compose.yml: a migration that passes
+        # here must be the one that passes on a contributor's machine.
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: chu
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: chu_grades
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://chu:ci@127.0.0.1:5432/chu_grades
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:integration
+
+  # Publishing lives in this workflow rather than a separate one chained by
+  # workflow_run: `needs` guarantees the deploy carries the exact commit the two
+  # jobs above just proved, and cannot start if either of them is red. A
+  # workflow_run trigger runs against the default branch and can publish a
+  # different commit than the one that was tested.
+  deploy:
+    needs: [check, integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/preprod'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The schema goes first. On 2026-09-26 the Worker was published with code
+      # that read a column Neon did not have yet, and /api/students/:id answered
+      # 500 until someone ran the migration by hand. A failing step ends the
+      # job, so a migration that does not apply publishes nothing.
+      #
+      # This ordering only covers code newer than the schema. The reverse case —
+      # a migration that removes what the live Worker still reads — breaks
+      # production for the seconds between these two steps. A destructive change
+      # therefore takes two releases: add the new shape, publish the code that
+      # stopped using the old one, and drop it only in a later release.
+      - name: Apply the migrations to Neon
+        run: npm run migrate
+        env:
+          # The direct connection string, not the pooled one: migrate.js takes a
+          # session-level advisory lock, and a transaction-mode pooler can serve
+          # the lock, the migration and the unlock on three different backends.
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      # Publishes to preprod.chu-epita.com, not to the apex. The apex is
+      # production and is published deliberately, by hand, when a release is
+      # validated — see docs/adr/0011-preprod-environment.md. A merge is
+      # therefore testable on a real URL without being something a student
+      # could reach.
+      #
+      # The same script a contributor runs by hand, so the two paths cannot
+      # drift.
+      - name: Build and publish the Worker to preprod
+        run: npm run deploy:preprod
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

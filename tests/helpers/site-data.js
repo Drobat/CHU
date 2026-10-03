@@ -1,4 +1,15 @@
 /**
+ * The loader the site used before the grades moved into the database.
+ *
+ * It lives here, and no longer under src/, because its only remaining reader is
+ * the test that checks every average in the database against the one the site
+ * showed. Left in the application tree it would be an invitation: the
+ * import.meta.glob calls below pull every grade into the bundle at build time,
+ * and importing one of these helpers out of habit would put all of them back in
+ * front of every visitor.
+ */
+
+/**
  * Auto-discovers all exam and project folders using Vite's glob import.
  *
  * Exam:    data/<class>/<number>/  →  info.json + body.json + students.json
@@ -8,13 +19,24 @@
  * The type field in info.json determines which loader handles it.
  */
 
-import CLASSES_JSON from "./classes.json";
+import CLASSES_JSON from "../../src/data/classes.json";
 
-const infoFiles    = import.meta.glob("./*/*/info.json",    { eager: true });
-const bodyFiles    = import.meta.glob("./*/*/body.json",    { eager: true });
-const studentFiles = import.meta.glob("./*/*/students.json",{ eager: true });
-const groupFiles   = import.meta.glob("./*/*/groups.json",  { eager: true });
-const reportFiles  = import.meta.glob("./*/*/markdown/*.md", { eager: true, query: "?raw", import: "default" });
+// Globs are keyed by the path written here, so moving this file out of
+// src/data/ changed every key. The code below splits those keys on "/" and
+// looks entries up by name, and would silently find nothing rather than fail —
+// the comparison test would then pass against an empty dataset. Re-keying to
+// the original "./<course>/<number>/..." shape keeps that from happening.
+const PREFIX = "../../src/data/";
+const rekey = (files) =>
+  Object.fromEntries(
+    Object.entries(files).map(([path, mod]) => [`./${path.slice(PREFIX.length)}`, mod]),
+  );
+
+const infoFiles    = rekey(import.meta.glob("../../src/data/*/*/info.json",    { eager: true }));
+const bodyFiles    = rekey(import.meta.glob("../../src/data/*/*/body.json",    { eager: true }));
+const studentFiles = rekey(import.meta.glob("../../src/data/*/*/students.json",{ eager: true }));
+const groupFiles   = rekey(import.meta.glob("../../src/data/*/*/groups.json",  { eager: true }));
+const reportFiles  = rekey(import.meta.glob("../../src/data/*/*/markdown/*.md", { eager: true, query: "?raw", import: "default" }));
 
 export const CLASSES = CLASSES_JSON;
 
@@ -145,21 +167,4 @@ export function getDefaultClassId(studentId) {
     }
   }
   return result;
-}
-
-/** Weighted average: sum(grade × coeff%) / sum(coeff%) — includes graded projects */
-export function computeWeightedAverage(examResults, projectResults = []) {
-  let sumWeighted = 0, sumCoeff = 0;
-  for (const { exam, student } of examResults) {
-    const normalized = (student.grade / exam.totalPoints) * 100;
-    sumWeighted += normalized * exam.coeff;
-    sumCoeff += exam.coeff;
-  }
-  for (const { project, group } of projectResults) {
-    if (group.grade == null) continue;
-    const normalized = (group.grade / project.totalPoints) * 100;
-    sumWeighted += normalized * project.coeff;
-    sumCoeff += project.coeff;
-  }
-  return sumCoeff > 0 ? Math.round((sumWeighted / sumCoeff) * 100) / 100 : 0;
 }

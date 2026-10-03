@@ -1,0 +1,94 @@
+// Production hosting — see docs/adr/0006-cloudflare-workers-hosting.md
+//
+// One Worker serves the Vite build as static assets and answers /api/*.
+// Assets are matched first and never invoke the Worker, so they cost nothing;
+// run_worker_first keeps /api/* out of the single-page-application fallback.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chu-grades",
+  // Named explicitly because this machine can reach more than one Cloudflare
+  // account, and one of them belongs to an unrelated client. An account id is
+  // an identifier, not a secret; leaving it out once put a Worker of this
+  // project in the wrong account.
+  "account_id": "47e73a1a4155b5d9b3850ad8f10d22b6",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-26",
+  // Required by the pg driver.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./dist",
+    // The app is a single page with no router: any unknown path serves index.html.
+    "not_found_handling": "single-page-application",
+    // Without this, the fallback above would answer /api/* with index.html.
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Serves preprod, the branch the CI deploys. chu-epita.xyz is untouched and
+  // keeps answering from GitHub Pages: leaving it alone is what makes the
+  // rollback free. See the Domain section of ADR-0006.
+  //
+  // custom_domain creates the DNS record and the route, so the zone has to be
+  // in this account. A deploy fails loudly if it is not, rather than publishing
+  // a Worker nobody can reach by name.
+  "routes": [
+    { "pattern": "chu-epita.com", "custom_domain": true }
+  ],
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Created by `npx wrangler hyperdrive create chu-grades-db --connection-string="$NEON_DATABASE_URL"`.
+      // The id is a public identifier, not a secret; the credentials stay in Hyperdrive.
+      "id": "10637075ba3a400180caa7268505a23b"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // Two deployments of the same code, from two branches.
+  //
+  // The top-level configuration above is production on the apex, published by
+  // hand when a release is validated (BDD-37). This environment is the one the
+  // CI publishes on every push to `preprod`, so a merged task can be tried on
+  // a real URL before it is anything a student could reach.
+  //
+  // Bindings are not inherited by an environment — Wrangler requires each one
+  // to be declared again — so `hyperdrive` is repeated below rather than
+  // omitted. `main`, `assets` and `compatibility_date` are inherited.
+  "env": {
+    "preprod": {
+      // Wrangler would append "-preprod" to the top-level name on its own;
+      // spelling it out is what makes the Worker findable in the dashboard
+      // under the name used here.
+      "name": "chu-grades-preprod",
+
+      // custom_domain creates the DNS record as well as the route, so the
+      // subdomain does not have to be added by hand — the zone is already in
+      // this account.
+      "routes": [
+        { "pattern": "preprod.chu-epita.com", "custom_domain": true }
+      ],
+
+      // The same Hyperdrive, therefore the same database as production.
+      //
+      // That is the status quo rather than a new risk: the apex has been
+      // serving this branch and this data since September, so nothing is
+      // being joined that was separate. It does mean a write tried out on
+      // preprod writes real grades, which matters now that the teacher area
+      // is arriving — see BDD-56 for splitting them.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "10637075ba3a400180caa7268505a23b"
+        }
+      ],
+
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+}

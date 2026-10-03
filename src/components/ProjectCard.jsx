@@ -3,10 +3,12 @@ import { motion } from "framer-motion";
 import { C, staggerItem } from "../theme";
 import { AsciiBox } from "./AsciiBox";
 
-export function ProjectCard({ project, group, studentId, hasReport, onViewReport }) {
+export function ProjectCard({ assessment, onViewReport }) {
   const [hovered, setHovered] = useState(false);
-  const hasGrade    = group.grade != null;
-  const hasComments = group.comments != null;
+  const group       = assessment.group;
+  const hasReport   = assessment.hasReport;
+  const hasGrade    = assessment.grade != null;
+  const hasComments = group?.comments != null;
 
   return (
     <motion.div variants={staggerItem}>
@@ -26,18 +28,20 @@ export function ProjectCard({ project, group, studentId, hasReport, onViewReport
 
               {/* Title + coeff */}
               <div className="flex justify-between items-baseline mb-2 flex-wrap gap-2">
-                <span className="text-tm-white text-[15px] font-bold">{project.title}</span>
-                <span className="text-tm-dim text-[11px]">{project.coeff}%</span>
+                <span className="text-tm-white text-[15px] font-bold">{assessment.title}</span>
+                <span className="text-tm-dim text-[11px]">{assessment.coeff}%</span>
               </div>
 
               {/* Group badge + status */}
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span
-                  className="text-[11px] px-2 py-0.5 tracking-wider font-bold border"
-                  style={{ color: C.yellow, borderColor: C.yellow }}
-                >
-                  {group.groupName}
-                </span>
+                {group && (
+                  <span
+                    className="text-[11px] px-2 py-0.5 tracking-wider font-bold border"
+                    style={{ color: C.yellow, borderColor: C.yellow }}
+                  >
+                    GROUP {group.num}
+                  </span>
+                )}
                 <span className="text-[11px] tracking-wider" style={{ color: C.green }}>
                   ✓ REGISTERED
                 </span>
@@ -51,40 +55,20 @@ export function ProjectCard({ project, group, studentId, hasReport, onViewReport
               {/* Dates + repo */}
               <div className="mb-4">
                 <div className="text-tm-dim text-[11px] mb-1">
-                  start {project.startDate} ── deadline {project.deadline}
+                  start {assessment.startsOn} ── deadline {assessment.dueOn}
                 </div>
-                {group.repositoryLink && (
+                {group?.repositoryUrl && (
                   <a
-                    href={group.repositoryLink}
+                    href={group.repositoryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[11px] tracking-wider break-all"
                     style={{ color: C.cyan }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    ⬡ {group.repositoryLink}
+                    ⬡ {group.repositoryUrl}
                   </a>
                 )}
-              </div>
-
-              {/* Members */}
-              <div className="mb-4">
-                <div className="text-tm-dim text-[10px] tracking-widest mb-1.5">MEMBERS</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(group.members).map(([id]) => (
-                    <span
-                      key={id}
-                      className="text-[11px] px-2 py-0.5 border"
-                      style={
-                        id === studentId
-                          ? { color: C.cyan, borderColor: C.cyan }
-                          : { color: C.textDim, borderColor: C.border }
-                      }
-                    >
-                      {id}
-                    </span>
-                  ))}
-                </div>
               </div>
 
               {/* Grade + comments */}
@@ -92,9 +76,9 @@ export function ProjectCard({ project, group, studentId, hasReport, onViewReport
                 {hasGrade ? (
                   <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-[22px] font-bold" style={{ color: C.green }}>
-                      {group.grade}
+                      {assessment.grade}
                     </span>
-                    <span className="text-tm-dim text-[14px]"> / {project.totalPoints}</span>
+                    <span className="text-tm-dim text-[14px]"> / {assessment.totalPoints}</span>
                   </div>
                 ) : (
                   <div className="text-tm-dim text-[12px] tracking-wider mb-2">

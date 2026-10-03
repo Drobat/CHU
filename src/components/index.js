@@ -6,5 +6,8 @@ export { ClassTabs }       from "./ClassTabs";
 export { ExamCard }        from "./ExamCard";
 export { ProjectCard }     from "./ProjectCard";
 export { QuestionCard }    from "./QuestionCard";
+export { Screen }          from "./Screen";
 
-export { CLASSES, EXAMS, STUDENTS, PROJECTS, PROJECT_GROUPS, PROJECT_REPORTS } from "../data";
+// The grades used to be re-exported from here, which is how they ended up in
+// the bundle every visitor downloads. They now come from the API — see
+// src/api/client.js.
