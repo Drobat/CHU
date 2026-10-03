@@ -1,5 +1,6 @@
 # Local and CI environments — see docs/adr/0004-docker-compose-environments.md
-# The `web` service is added once the Next.js migration (BDD-27) is merged.
+# No `web` service: ADR-0009 keeps the front end on Vite, served by the
+# Worker, so the service ADR-0004 deferred is cancelled rather than pending.
 
 services:
   db:
