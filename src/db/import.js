@@ -12,6 +12,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { isTeacherId } from "../lib/teacher-auth.js";
+import { requireDatabaseUrl } from "./connection-url.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(HERE, "..", "data");
@@ -171,6 +173,29 @@ function placeholders(rowCount, types) {
 }
 
 /**
+ * Refuses a teacher number before it can become a student row (ADR-0008).
+ *
+ * The database refuses it too, with a CHECK constraint, and that is the layer
+ * that actually guarantees it: the import is one write path out of three. This
+ * one exists for the message. A constraint violation on a batch insert names
+ * the constraint and the table, not the identifier or the file it came from,
+ * and the person who has to fix it is reading a JSON file.
+ *
+ * Exported so it can be tested on its own. Reaching it through a real import
+ * would mean a fixture folder under src/data/, and src/data/ is the teachers'
+ * reference format, not a place for test data.
+ */
+export function assertNoTeacherNumbers(ids) {
+  const reserved = ids.filter(isTeacherId);
+  if (reserved.length === 0) return;
+  throw new Error(
+    `src/data/ holds ${reserved.length} identifier(s) reserved for teachers ` +
+      `(${reserved.join(", ")}). A number beginning with 2042 identifies a teacher, ` +
+      `not a student. Correct the data rather than the constraint.`,
+  );
+}
+
+/**
  * Registers students without their names.
  *
  * A student already known keeps the cohort they were given — a repeater's
@@ -178,6 +203,9 @@ function placeholders(rowCount, types) {
  */
 async function ensureStudents(client, studentIds, cohortId, counters) {
   const ids = [...new Set(studentIds)];
+
+  assertNoTeacherNumbers(ids);
+
   for (const part of batches(ids)) {
     const params = part.flatMap((id) => [id, cohortId]);
     const inserted = await client.query(
@@ -340,10 +368,7 @@ async function importGroups(client, dir, assessmentId, cohortId, counters, log) 
 }
 
 export async function runImport({ connectionString, log = console.log, importMap } = {}) {
-  const url = connectionString ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL is not set. Copy .env.example to .env, then run docker compose up -d db.");
-  }
+  const url = requireDatabaseUrl(connectionString);
 
   // Tests pass their own map so that proving the importer works on a project
   // does not require committing a decision about which promotion sat a course.
