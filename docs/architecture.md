@@ -58,6 +58,7 @@ without it an API call would be answered with `index.html`.
 | Database access | `pg` through a Hyperdrive binding | ADR-0003, ADR-0006 |
 | Schema | Numbered `.sql` migrations, applied in order | `src/db/migrations/` |
 | Import | Reads `src/data/`, idempotent, one transaction | `src/db/import.js` |
+| Local analytics | Metabase, optional, read-only, never hosted | `docker compose --profile metabase` |
 
 ## Where the grades come from
 
@@ -81,6 +82,52 @@ is a deliberate act, not something a merge should do.
 `student_grades_v` is the only object the API reads. Published assessment,
 nothing archived: the rule is in the view so no endpoint can forget it. The
 teacher area, when it exists, will read the tables and see everything.
+
+## Reading the grades directly
+
+Metabase is an optional Compose service — `profiles: ["metabase"]`, so
+`docker compose up` does not start it — that answers questions about the grades
+by promotion, course and assessment without any of it being added to the
+application.
+
+```mermaid
+flowchart LR
+    person["Contributor's browser<br/>localhost:3001"]
+
+    subgraph compose["docker compose --profile metabase"]
+        mb["metabase<br/>pinned image, telemetry off"]
+        subgraph db["db — postgres:18-alpine"]
+            grades[("chu_grades<br/>SELECT only")]
+            app[("metabase_app<br/>dashboards, accounts")]
+        end
+    end
+
+    person --> mb
+    mb -->|"metabase_reader — reads"| grades
+    mb -->|"metabase_reader — owns"| app
+```
+
+It sits beside the application, not inside it: nothing in `src/` or `worker/`
+knows it exists, and removing the service removes the feature.
+
+Two properties are deliberate. **It cannot write a grade** — `metabase_reader`
+holds `CONNECT`, `USAGE` and `SELECT` and nothing else, so the refusal comes
+from PostgreSQL rather than from trusting a tool nobody here wrote.
+`tests/integration/metabase-reader.test.js` asserts it. **Its own state is in
+PostgreSQL**, in a `metabase_app` database the same role owns, rather than in
+the H2 file the image defaults to: owning a database grants nothing in any
+other one, so one credential is read-only on the grades and still free to
+write its dashboards next door — which is what makes them survive
+`docker compose down`.
+
+The role and that database are created by `npm run metabase:setup` and not by a
+migration, because the role needs a password and a migration is a committed
+`.sql` file with nowhere to put one. Production has neither: this is a
+workstation tool.
+
+**It is not open to teachers**, and nothing here hosts it. That is a separate
+decision — it needs an authentication story the project does not have yet, and
+it gets its own ADR when it is taken.
 
 ## Delivery
 
@@ -117,6 +164,8 @@ including administrators.
   trigger currently only ever records imports.
 - **`chu-epita.xyz` still serves the old site**, grades included, until the
   redirect lands.
+- **No analytics for teachers.** Metabase runs on a contributor's machine
+  only. A teacher who wants a figure asks for it.
 
 ## Where to read further
 

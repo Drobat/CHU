@@ -107,6 +107,93 @@ See `docs/database.md` for the schema and the rules the database enforces, and
 
 ---
 
+## Local analytics with Metabase
+
+Exploring the grades — average by promotion, by course, by assessment —
+without writing the SQL by hand. Metabase runs as an **optional** Compose
+service: it is off unless you ask for it.
+
+It is a workstation tool. It is not exposed to teachers, it is not hosted
+anywhere, and it holds a credential the database refuses writes to. Opening it
+up is a separate decision with its own ADR, and needs an authentication story
+this project does not have yet.
+
+### Starting it
+
+The database must already be migrated (`npm run migrate`). Then, once:
+
+```bash
+npm run metabase:setup        # creates the metabase_reader role + metabase_app
+```
+
+That reads `METABASE_READER_PASSWORD` from `.env` — copy the line from
+`.env.example` if your `.env` predates this feature, or Compose will warn that
+the variable is unset and Metabase will fail to start. Then:
+
+```bash
+docker compose --profile metabase up -d
+```
+
+`docker compose up` **without** the profile still starts the database alone;
+Metabase only ever comes up with `--profile metabase`. Stop it the same way:
+
+```bash
+docker compose --profile metabase down
+```
+
+Give it a minute on the first start — it builds its own schema — then open
+<http://localhost:3001>. If 3001 is taken, set `METABASE_PORT` in `.env`.
+
+### First connection
+
+Metabase asks for an account on first launch. It is local and personal: the
+e-mail and password are stored in `metabase_app`, never shared, and there is no
+sign-up to configure.
+
+Then add the grades as a data source — **Settings → Admin → Databases → Add**:
+
+| Field | Value |
+| --- | --- |
+| Database type | PostgreSQL |
+| Host | `db` |
+| Port | `5432` |
+| Database name | `chu_grades` |
+| Username | `metabase_reader` |
+| Password | the `METABASE_READER_PASSWORD` of your `.env` |
+
+`db` and `5432`, not `127.0.0.1` and `DB_PORT`: Metabase reaches the database
+across the Compose network, where the container's own name and port are what
+answer. `DB_PORT` is the host's view and means nothing between two containers.
+
+Asked once — Metabase keeps data sources in its own database with everything
+else.
+
+### It is read-only, and the database enforces it
+
+`metabase_reader` has `CONNECT`, `USAGE` on `public` and `SELECT`. No insert,
+no update, no delete, no DDL, and no attribute that would let it grant itself
+more. A question written in the UI, a wrong click in the admin, a SQL cell
+typed by hand — all of it is refused by PostgreSQL, not by Metabase being
+careful. `tests/integration/metabase-reader.test.js` asserts exactly that.
+
+The one place it can write is `metabase_app`, the database it owns, where its
+own dashboards live. That is why `docker compose --profile metabase down` and
+`up` again finds your questions where you left them: they are rows in the
+`pgdata` volume, not in the container. `docker compose down -v` deletes them
+along with the grades, as it deletes everything else.
+
+A table added by a later migration is readable without anything being done:
+that is what the default privileges are for. Re-running `npm run
+metabase:setup` is the fallback for the case where one slipped through — a
+table created by a different role, a grant edited by hand — and is free and
+idempotent.
+
+Nothing here touches the application, the schema, or production. `npm run
+metabase:setup` is the only command that writes, it only ever creates a role
+and a database beside the grades, and the production database has neither.
+
+---
+
 ## Production
 
 Production runs on Cloudflare Workers: one Worker serves the Vite build as

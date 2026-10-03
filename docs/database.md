@@ -124,6 +124,35 @@ view checks two promotions, the student's and the edition's: a student
 repeating a year belongs to one while sitting the edition of another, and
 archiving either has to hide the grade.
 
+## Roles
+
+| Role | On `chu_grades` | Owns | Created by |
+| --- | --- | --- | --- |
+| `POSTGRES_USER` (`chu` locally) | everything | the schema | the container, from `.env` |
+| `metabase_reader` | `CONNECT`, `USAGE` on `public`, `SELECT` | `metabase_app` | `npm run metabase:setup` |
+
+`metabase_reader` exists so that the local Metabase (README, "Local analytics
+with Metabase") reads the grades with a credential the database refuses writes
+to — no insert, no update, no delete, no DDL, and no `SUPERUSER`, `CREATEDB`,
+`CREATEROLE` or `BYPASSRLS` that would let it widen its own grants.
+
+It is granted twice over: `grant select on all tables` for what exists, and
+`alter default privileges ... grant select on tables` for what a later
+migration adds. Only the second one keeps working on its own; without it a new
+table would be invisible to Metabase until someone thought to re-grant, and a
+dashboard would quietly stop counting the newest data. Re-running
+`npm run metabase:setup` is the fallback, and is idempotent.
+
+The same role owns `metabase_app`, a separate database holding Metabase's own
+dashboards, questions and accounts. Owning a database grants nothing in any
+other one, so that one credential writes freely there and still cannot touch a
+grade. A separate database rather than a schema inside `chu_grades`, so a tool
+nobody here wrote cannot create its ~200 tables next to the ones that matter.
+
+Neither the role nor `metabase_app` exists in production: `npm run migrate`
+does not create them, and the analytics are a workstation tool. Writes are
+asserted to be refused in `tests/integration/metabase-reader.test.js`.
+
 ## What is not there yet
 
 - **One course code no longer matches its folder.** `src/data/algo/` holds
