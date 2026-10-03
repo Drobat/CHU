@@ -127,7 +127,8 @@ workstation tool.
 
 **It is not open to teachers**, and nothing here hosts it. That is a separate
 decision — it needs an authentication story the project does not have yet, and
-it gets its own ADR when it is taken.
+it gets its own ADR when it is taken. See
+`docs/adr/0007-local-analytics-with-metabase.md`.
 
 ## Delivery
 
@@ -170,5 +171,6 @@ including administrators.
 ## Where to read further
 
 `docs/adr/0002` for the branches, `0003` for SQL over an ORM, `0004` for the
-local database, `0006` for the hosting, the domain and where the data lives.
+local database, `0006` for the hosting, the domain and where the data lives,
+`0007` for the local analytics.
 `docs/database.md` for the schema, `docs/testing.md` for what blocks a merge.

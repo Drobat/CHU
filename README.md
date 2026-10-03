@@ -192,6 +192,9 @@ Nothing here touches the application, the schema, or production. `npm run
 metabase:setup` is the only command that writes, it only ever creates a role
 and a database beside the grades, and the production database has neither.
 
+See `docs/adr/0007-local-analytics-with-metabase.md` for why the tool is local,
+optional and read-only, and what opening it to teachers would require.
+
 ---
 
 ## Production

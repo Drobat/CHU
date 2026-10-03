@@ -151,7 +151,9 @@ nobody here wrote cannot create its ~200 tables next to the ones that matter.
 
 Neither the role nor `metabase_app` exists in production: `npm run migrate`
 does not create them, and the analytics are a workstation tool. Writes are
-asserted to be refused in `tests/integration/metabase-reader.test.js`.
+asserted to be refused in `tests/integration/metabase-reader.test.js`, and
+`docs/adr/0007-local-analytics-with-metabase.md` records why the tool is local
+and optional.
 
 ## What is not there yet
 
