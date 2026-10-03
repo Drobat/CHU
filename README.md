@@ -226,10 +226,11 @@ Students log in with their number alone, unchanged. **Teachers have a number
 and a password**, because the teacher area writes grades and nothing should
 write a grade anonymously. Three accounts, created by hand.
 
-A teacher number is ten digits beginning with `2042`. The entry screen
-recognises that prefix in the browser and reveals a password field without
+A teacher number is ten digits beginning with `2042`. The entry screen reveals
+a password field once all ten digits are there, decided in the browser without
 asking the server — the server is never queried about which numbers belong to
-teachers.
+teachers. It waits for the whole number rather than the prefix alone, so a
+student mistyping a `2024` number is never shown a password prompt.
 
 ### Creating an account
 
