@@ -144,9 +144,22 @@ connection string, so local development never touches Neon.
 
 ### Deploying
 
-**A push to `preprod` deploys.** The `deploy` job of `.github/workflows/ci.yml`
-runs after `check` and `integration`, applies the migrations to Neon, then
-publishes the Worker. It needs two repository secrets:
+There are two deployments of the same code, and only one of them is automatic.
+
+| URL | Published from | Published by |
+| --- | --- | --- |
+| **`preprod.chu-epita.com`** | `preprod` | the CI, on every push |
+| `chu-epita.com` | a validated release | by hand, `npm run deploy` |
+
+**So a push to `preprod` deploys preprod**, not production: that is where a
+merged task is tried out on a real URL, with real TLS, from Xi'an. Releasing is
+a separate decision. `docs/adr/0011-preprod-environment.md` has the reasoning —
+and the limit it accepts, which is that both read the same database, so a write
+tried out on preprod writes a real grade until BDD-56 separates them.
+
+The `deploy` job of `.github/workflows/ci.yml` runs after `check` and
+`integration`, applies the migrations to Neon, then publishes the preprod
+Worker with `npm run deploy:preprod`. It needs two repository secrets:
 
 | Secret | Contents |
 | --- | --- |
