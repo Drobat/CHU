@@ -137,9 +137,11 @@ on Workers, and the same API in Node so one implementation serves the Worker
 and the account script), a 16-byte random salt per account, 50 000 iterations
 stored per row, 256 bits derived. Comparison is constant-time over bytes.
 
-**Front end.** The entry screen recognises the `2042` prefix locally and reveals
-a password field without calling the server, so no request announces whether a
-number is a teacher's.
+**Front end.** The entry screen decides locally, from the digits alone, and
+reveals a password field without calling the server, so no request announces
+whether a number is a teacher's. The field waits for the complete ten-digit
+number: the prefix alone would prompt a student who mistypes a `2024` number for
+a password they do not have.
 
 **Failure.** One message, `Invalid ID or password`, for a wrong number and a
 wrong password alike, and the same work in both cases: an unknown number is

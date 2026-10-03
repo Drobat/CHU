@@ -5,7 +5,7 @@
  * are rendered manually for the authentic terminal look.
  * Shake animation triggers on wrong ID.
  */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { scaleIn, shake, delayedFade, delayedScale } from "../theme";
 import { BlinkingCursor } from "../components";
@@ -13,8 +13,10 @@ import { fetchStudent, loginTeacher } from "../api/client";
 import { isTeacherId } from "../lib/teacher-auth";
 
 /**
- * The prefix alone, not the whole pattern: the password field has to appear
- * while the number is still being typed, not once the tenth digit lands.
+ * The prefix says "this number is heading for a teacher account", which is what
+ * the error messages and the clearing rules need. It is deliberately *not* what
+ * reveals the password field: four digits are not a number, and a field that
+ * appears on `2042` appears for every student mistyping a 2023 number.
  */
 const TEACHER_PREFIX = /^2042/;
 
@@ -25,12 +27,17 @@ export function LoginScreen({ onLogin, onTeacherLogin }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
-  const inputRef = { current: null };
-  const passwordRef = { current: null };
+  const inputRef = useRef(null);
+  const passwordRef = useRef(null);
 
-  // Decided here, from the digits, with no request. Asking the server which
+  // Both decided here, from the digits, with no request. Asking the server which
   // numbers are teachers' would be a way to enumerate them.
+  //
+  // Two questions, not one: `looksLikeTeacher` drives the error messages and the
+  // clearing rules, `teacherIdComplete` drives the password field. Only a whole
+  // number gets a password prompt.
   const looksLikeTeacher = TEACHER_PREFIX.test(studentId);
+  const teacherIdComplete = isTeacherId(studentId);
 
   // Checking a number used to be a lookup in a table the browser already had.
   // It is now a request, so it can be slow and it can fail — and an unknown
@@ -44,6 +51,14 @@ export function LoginScreen({ onLogin, onTeacherLogin }) {
     // rather than spent as one of the five attempts the server allows.
     if (looksLikeTeacher && !isTeacherId(id)) {
       setError({ kind: "teacherIdShape" });
+      setShakeKey((k) => k + 1);
+      return;
+    }
+
+    // Same reasoning one step further: an empty password cannot be the right one,
+    // so it is refused here instead of costing one of the five.
+    if (teacherIdComplete && !password) {
+      setError({ kind: "passwordMissing" });
       setShakeKey((k) => k + 1);
       return;
     }
@@ -69,7 +84,19 @@ export function LoginScreen({ onLogin, onTeacherLogin }) {
     }
   };
 
-  const focus = () => (looksLikeTeacher ? passwordRef : inputRef).current?.focus();
+  const focus = () => (teacherIdComplete ? passwordRef : inputRef).current?.focus();
+
+  /**
+   * Focus follows the field that is visible, and it is moved *here* rather than
+   * from a ref callback. A callback ref runs on every render, so focusing from
+   * one stole the caret back to the number on each keystroke of the password —
+   * the second character and everything after it landed in the number instead.
+   * An effect keyed on the transition runs once per transition, which is the
+   * number of times focus should move.
+   */
+  useEffect(() => {
+    (teacherIdComplete ? passwordRef : inputRef).current?.focus();
+  }, [teacherIdComplete]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" onClick={focus}>
@@ -83,7 +110,7 @@ export function LoginScreen({ onLogin, onTeacherLogin }) {
             studentId={studentId}
             password={password}
             remember={remember}
-            looksLikeTeacher={looksLikeTeacher}
+            showPassword={teacherIdComplete}
             error={error}
             busy={busy}
             shakeKey={shakeKey}
@@ -163,7 +190,7 @@ function SchoolHeader() {
 }
 
 function IdPrompt({
-  studentId, password, remember, looksLikeTeacher, error, busy, shakeKey,
+  studentId, password, remember, showPassword, error, busy, shakeKey,
   inputRef, passwordRef, onSubmit, onFocus, onChange, onPasswordChange, onRememberChange,
 }) {
   return (
@@ -181,7 +208,7 @@ function IdPrompt({
       />
 
       <AnimatePresence>
-        {looksLikeTeacher && (
+        {showPassword && (
           <PasswordPrompt
             password={password}
             remember={remember}
@@ -203,7 +230,7 @@ function IdPrompt({
 }
 
 /**
- * Appears as soon as the number starts with the teacher prefix, without a
+ * Appears once the ten digits of a teacher number are there, and without a
  * request: the server is never asked whether a number belongs to a teacher.
  *
  * The characters are rendered as dots rather than echoed, and the real input is
@@ -225,7 +252,7 @@ function PasswordPrompt({ password, remember, passwordRef, onSubmit, onChange, o
         <span className="text-tm-white tracking-[2px]">{"•".repeat(password.length)}</span>
         <BlinkingCursor />
         <input
-          ref={(el) => { passwordRef.current = el; }}
+          ref={passwordRef}
           type="password"
           name="password"
           autoComplete="current-password"
@@ -264,8 +291,8 @@ function TerminalInput({ studentId, error, shakeKey, inputRef, onSubmit, onFocus
       <span className="text-tm-white">{studentId}</span>
       <BlinkingCursor />
       <input
-        ref={(el) => { inputRef.current = el; el?.focus(); }}
-        type="text" inputMode="numeric" autoFocus
+        ref={inputRef}
+        type="text" inputMode="numeric"
         value={studentId}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
         onKeyDown={(e) => e.key === "Enter" && onSubmit()}
@@ -312,6 +339,12 @@ function StatusLine({ error, busy }) {
           <motion.span key="teacherIdShape" className="text-tm-dim"
             initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
             -bash: a teacher ID is 10 digits
+          </motion.span>
+        )}
+        {!busy && error?.kind === "passwordMissing" && (
+          <motion.span key="passwordMissing" className="text-tm-dim"
+            initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+            -bash: password required
           </motion.span>
         )}
         {!busy && error?.kind === "unreachable" && (
