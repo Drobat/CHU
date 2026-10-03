@@ -24,9 +24,9 @@
     "run_worker_first": ["/api/*"]
   },
 
-  // Serves preprod, the branch the CI deploys. chu-epita.xyz is untouched and
-  // keeps answering from GitHub Pages: leaving it alone is what makes the
-  // rollback free. See the Domain section of ADR-0006.
+  // Serves preprod, the branch the CI deploys. The Domain section of ADR-0006
+  // describes chu-epita.xyz as the free rollback on GitHub Pages; that is no
+  // longer true, the domain has left the project. See docs/architecture.md.
   //
   // custom_domain creates the DNS record and the route, so the zone has to be
   // in this account. A deploy fails loudly if it is not, rather than publishing
