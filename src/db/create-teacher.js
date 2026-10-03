@@ -16,6 +16,7 @@
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { generatePassword, hashPassword, isTeacherId } from "../lib/teacher-auth.js";
+import { requireDatabaseUrl } from "./connection-url.js";
 
 /**
  * @param {object} options
@@ -33,10 +34,7 @@ export async function createTeacher({ id, reset = false, connectionString, log =
     );
   }
 
-  const url = connectionString ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL is not set. Copy .env.example to .env, then run docker compose up -d db.");
-  }
+  const url = requireDatabaseUrl(connectionString);
 
   const password = generatePassword();
   const { salt, hash, iterations } = await hashPassword(password);
