@@ -47,6 +47,40 @@ A pull request targeting `preprod` cannot be merged unless:
 `master` only ever receives one pull request from `preprod`, once the V1 is
 validated on its hosting. Nothing else is merged there during the V1.
 
+## What blocks a release
+
+Merging and releasing are two different gates, and the section above only
+describes the first one. A merge into `preprod` is also a release: the CI's
+`deploy` job runs on a push to that branch and publishes to production.
+
+A release is blocked when:
+
+- **`check` or `integration` is red.** The `deploy` job declares
+  `needs: [check, integration]`, so it cannot start if either failed. Nothing
+  is published.
+- **A migration does not apply.** The job applies the migrations to Neon
+  *before* publishing the Worker, and a failing step ends the job. Code that
+  reads a column the database does not have is never published.
+
+Two things are deliberately *not* blocked, and both are the contributor's
+responsibility rather than the pipeline's:
+
+- **A migration that removes what the live Worker still reads.** The ordering
+  above only protects the case where the code is newer than the schema. The
+  reverse breaks production for the seconds between the two steps, so a
+  destructive change takes **two releases**: add the new shape, publish the
+  code that stopped using the old one, and drop it in a later release.
+- **A release that is simply wrong.** There is no rollback deployment. The way
+  back from a bad release is another release from `preprod`, so the question to
+  ask before merging is not "can I undo this" but "do I believe this".
+
+A push to `master` publishes to GitHub Pages and is **not** a production
+release: production is the Worker serving `preprod`. The `npm run build` row in
+the table above describes that Pages path, which the V1 no longer uses.
+
+`docs/architecture.md` has the map of what runs where; this section is the
+contract.
+
 ## Rule: a fixed bug gets a regression test
 
 Every bug fix ships with a test that fails before the fix and passes after it.
